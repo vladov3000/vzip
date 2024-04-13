@@ -1,10 +1,10 @@
 vzip - Vlad's zip
 
   vzip is a simple compression program that works by compressing 8 MiB chunks
-using huffman encoding. It compresses the 5458199 byte "examples/shakespeare.txt"
-file down to 3272382 bytes or ~60% of the original size. For reference,
-zip compresses the same file down to 2022556 bytes or 37% of the original
-size.
+using huffman encoding. It compresses the 5458199 byte
+"examples/shakespeare.txt" file down to 3272382 bytes or ~60% of the original
+size. For reference, zip compresses the same file down to 2022556 bytes or 37%
+of the original size.
 
 === USAGE ===
 
