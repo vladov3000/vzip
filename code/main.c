@@ -48,7 +48,7 @@ static UShort dequeue(Queue* queue) {
 
 static UChar buffer[8 * 4096];
 static Size  weights[512];
-static Tree  children[512][2];
+static Tree  children[255][2];
 static Queue queues[2];
 static Size  encodings[256];
 static Size  encoding_lengths[256];
@@ -237,8 +237,12 @@ int main(int argc, Char** argv) {
       for (Size i = 0; i < current; i++) {
 	for (Size j = 0; j < 2; j++) {
 	  UShort child = children[i][j];
-	  write_byte(output_fd, child >> 8);
-	  write_byte(output_fd, child & 0xFF);
+	  if (child & 0x100) {
+	    write_byte(output_fd, 0xFF);
+	    write_byte(output_fd, child & 0xFF);
+	  } else {
+	    write_byte(output_fd, child);
+	  }
 	}
       }
 
@@ -272,9 +276,10 @@ int main(int argc, Char** argv) {
       Tree current = 0;
       for (Size i = 0; i < 255; i++) {
 	for (Size j = 0; j < 2; j++) {
-	  unsigned head  = read_byte(input_fd) << 8;
-	  unsigned tail  = read_byte(input_fd);
-	  unsigned child = head | tail;
+	  unsigned child = read_byte(input_fd);
+	  if (child == 0xFF) {
+	    child = 0x100 | read_byte(input_fd);
+	  }
 	  if (!(child & 0x100) && child >= length(children)) {
 	    printf("Invalid child offset 0x%x.\n", child);
 	    exit(EXIT_FAILURE);
