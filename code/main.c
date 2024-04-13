@@ -21,7 +21,6 @@ typedef struct Tree Tree;
 
 struct Tree {
   UChar  c;
-  Size   weight;
   UShort children[2];
 };
 
@@ -53,6 +52,7 @@ static UShort dequeue(Queue* queue) {
 }
 
 static UChar buffer[8 * 4096];
+static Size  weights[512];
 static Tree  trees[512];
 static Size  ntrees;
 static Queue queues[2];
@@ -183,6 +183,7 @@ int main(int argc, Char** argv) {
 	break;
       }
 
+      memset(weights, 0, sizeof weights);
       memset(trees, 0, sizeof trees);
 
       for (Size i = 0; i < length(queues); i++) {
@@ -202,12 +203,12 @@ int main(int argc, Char** argv) {
 	ntrees      = length(queue->trees);
       
 	for (Size i = 0; i < sizeof buffer; i++) {
-	  trees[queue->trees[buffer[i]]].weight++;
+	  weights[queue->trees[buffer[i]]]++;
 	}
 
 	for (Size i = 1; i < length(queue->trees); i++) {
 	  for (Size j = i; j > 0; j--) {
-	    if (trees[queue->trees[j - 1]].weight > trees[queue->trees[j]].weight) {
+	    if (weights[queue->trees[j - 1]] > weights[queue->trees[j]]) {
 	      UShort swap         = queue->trees[j - 1];
 	      queue->trees[j - 1] = queue->trees[j];
 	      queue->trees[j]     = swap;
@@ -225,7 +226,7 @@ int main(int argc, Char** argv) {
 	    children[i] = dequeue(&queues[1]);
 	  } else if (queues[1].size == 0) {
 	    children[i] = dequeue(&queues[0]);
-	  } else if (trees[front(&queues[0])].weight <= trees[front(&queues[1])].weight) {
+	  } else if (weights[front(&queues[0])] <= weights[front(&queues[1])]) {
 	    children[i] = dequeue(&queues[0]);
 	  } else {
 	    children[i] = dequeue(&queues[1]);
@@ -236,8 +237,8 @@ int main(int argc, Char** argv) {
 
 	Tree* new = &trees[ntrees++];
 	for (Size i = 0; i < length(new->children); i++) {
-	  new->weight      += trees[children[i]].weight;
-	  new->children[i]  = children[i];
+	  weights[new - trees] += weights[children[i]];
+	  new->children[i]      = children[i];
 	}
 	enqueue(&queues[1], new - trees);
       }
