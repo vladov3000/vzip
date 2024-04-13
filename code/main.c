@@ -10,41 +10,29 @@
 #define min(x, y)     ((x) < (y) ? (x) : (y))
 #define max(x, y)     ((x) > (y) ? (x) : (y))
 
+typedef char          Char;
+typedef unsigned char UChar;
+typedef int           Fd;
+typedef size_t        Size;
+typedef ssize_t       ISize;
+
 typedef struct Tree Tree;
 
 struct Tree {
-  char   c;
-  size_t weight;
-  Tree*  children[2];
+  UChar c;
+  Size  weight;
+  Tree* children[2];
 };
 
-static void print_tree(Tree* tree, int indents) {
-  if (tree == NULL) {
-    return;
-  }
-  
-  printf("%*.s", indents, "");
-  if (isprint(tree->c)) {
-    printf("'%c' ", tree->c);
-  } else {
-    printf("0x%02x", tree->c & 0xFF);
-  }
-  printf(" %zu\n", tree->weight);
-
-  for (size_t i = 0; i < length(tree->children); i++) {
-    print_tree(tree->children[i], indents + 1);
-  }
-}
-
 typedef struct {
-  Tree*  trees[256];
-  size_t start;
-  size_t size;
+  Tree* trees[256];
+  Size  start;
+  Size  size;
 } Queue;
 
-static Tree* get(Queue* queue, size_t i) {
-  assert(i < queue->size);
-  return queue->trees[(queue->start + i) % length(queue->trees)];
+static Tree* front(Queue* queue) {
+  assert(queue->size > 0);
+  return queue->trees[queue->start % length(queue->trees)];
 }
 
 static void enqueue(Queue* queue, Tree* tree) {
@@ -63,20 +51,20 @@ static Tree* dequeue(Queue* queue) {
   return result;
 }
 
-static unsigned char buffer[8 * 4096];
-static Tree          trees[512];
-static size_t        ntrees;
-static Queue         queues[2];
-static size_t        encodings[256];
-static size_t        encoding_lengths[256];
-static unsigned char output[8 * 4096];
-static size_t        output_byte;
-static unsigned char small_output;
-static size_t        output_bit;
-static size_t        input_start;
-static ssize_t       input_bytes;
-static unsigned char small_input;
-static size_t        input_bit;
+static UChar buffer[8 * 4096];
+static Tree  trees[512];
+static Size  ntrees;
+static Queue queues[2];
+static Size  encodings[256];
+static Size  encoding_lengths[256];
+static UChar output[8 * 4096];
+static Size  output_byte;
+static UChar small_output;
+static Size  output_bit;
+static Size  input_start;
+static ISize input_bytes;
+static UChar small_input;
+static Size  input_bit;
 
 static void write_byte(int fd, unsigned byte) {
   output[output_byte++] = byte;
@@ -150,12 +138,12 @@ static void compute_bytes_encodings(Tree* tree, unsigned encoding, int length) {
     return;
   }
 
-  for (size_t i = 0; i < length(tree->children); i++) {
+  for (Size i = 0; i < length(tree->children); i++) {
     compute_bytes_encodings(children[i], (encoding << 1) | i, length + 1);
   }
 }
 
-int main(int argc, char** argv) {
+int main(int argc, Char** argv) {
   if (argc != 4) {
     printf("Expected exactly 3 arguments.\n"
 	   "Usage: vzip compress   INPUT OUTPUT\n"
@@ -163,17 +151,17 @@ int main(int argc, char** argv) {
     exit(EXIT_FAILURE);
   }
 
-  char* command     = argv[1];
-  char* input_path  = argv[2];
-  char* output_path = argv[3];
+  Char* command     = argv[1];
+  Char* input_path  = argv[2];
+  Char* output_path = argv[3];
 
-  int input_fd = open(input_path, O_RDONLY);
+  Fd input_fd = open(input_path, O_RDONLY);
   if (input_fd == -1) {
     perror("open");
     exit(EXIT_FAILURE);
   }
 
-  int output_fd = open(output_path, O_WRONLY | O_CREAT, 0666);
+  Fd output_fd = open(output_path, O_WRONLY | O_CREAT, 0666);
   if (output_fd == -1) {
     perror("open");
     exit(EXIT_FAILURE);
@@ -186,7 +174,7 @@ int main(int argc, char** argv) {
   
   if (strcmp(command, "compress") == 0) {
     while (1) {
-      ssize_t bytes_read = read(input_fd, buffer, sizeof buffer);
+      ISize bytes_read = read(input_fd, buffer, sizeof buffer);
       if (bytes_read == -1) {
 	perror("read");
 	exit(EXIT_FAILURE);
@@ -199,7 +187,7 @@ int main(int argc, char** argv) {
 
       {
 	Queue* queue = &queues[0];
-	for (size_t i = 0; i < length(queue->trees); i++) {
+	for (Size i = 0; i < length(queue->trees); i++) {
 	  Tree* new       = &trees[i];
 	  new->c          = i;
 	  queue->trees[i] = new;
@@ -208,12 +196,12 @@ int main(int argc, char** argv) {
 	queue->size = length(queue->trees);
 	ntrees      = length(queue->trees);
       
-	for (size_t i = 0; i < sizeof buffer; i++) {
+	for (Size i = 0; i < sizeof buffer; i++) {
 	  queue->trees[buffer[i]]->weight++;
 	}
 
-	for (size_t i = 1; i < length(queue->trees); i++) {
-	  for (size_t j = i; j > 0; j--) {
+	for (Size i = 1; i < length(queue->trees); i++) {
+	  for (Size j = i; j > 0; j--) {
 	    if (queue->trees[j - 1]->weight > queue->trees[j]->weight) {
 	      Tree* swap          = queue->trees[j - 1];
 	      queue->trees[j - 1] = queue->trees[j];
@@ -223,23 +211,16 @@ int main(int argc, char** argv) {
 	    }
 	  }
 	}
-
-	/*
-	  printf("Frequencies:\n");
-	  for (size_t i = 0; i < length(queue->trees); i++) {
-	    print_tree(queue->trees[i], 1);
-	  }
-	*/
       }
 
       while (queues[0].size + queues[1].size > 1) {
 	Tree* children[2];
-	for (size_t i = 0; i < length(children); i++) {
+	for (Size i = 0; i < length(children); i++) {
 	  if (queues[0].size == 0) {
 	    children[i] = dequeue(&queues[1]);
 	  } else if (queues[1].size == 0) {
 	    children[i] = dequeue(&queues[0]);
-	  } else if (get(&queues[0], 0)->weight <= get(&queues[1], 0)->weight) {
+	  } else if (front(&queues[0])->weight <= front(&queues[1])->weight) {
 	    children[i] = dequeue(&queues[0]);
 	  } else {
 	    children[i] = dequeue(&queues[1]);
@@ -249,20 +230,15 @@ int main(int argc, char** argv) {
 	assert(ntrees < length(trees));
 
 	Tree* new = &trees[ntrees++];
-	for (size_t i = 0; i < length(new->children); i++) {
+	for (Size i = 0; i < length(new->children); i++) {
 	  new->weight      += children[i]->weight;
 	  new->children[i]  = children[i];
 	}
 	enqueue(&queues[1], new);
       }
 
-      Tree* tree = get(queues[0].size > 0 ? &queues[0] : &queues[1], 0);
-      /*
-	printf("Result:\n");
-	print_tree(tree, 1);
-      */
-
-      for (size_t i = 0; i < ntrees; i++) {
+      Tree* tree = front(queues[0].size > 0 ? &queues[0] : &queues[1]);
+      for (Size i = 0; i < ntrees; i++) {
 	Tree* current = &trees[i];
 	if (current->children[0] == NULL && current->children[1] == NULL) {
 	  write_byte(output_fd, 0x80);
@@ -272,7 +248,7 @@ int main(int argc, char** argv) {
 	  continue;
 	}
 
-	for (size_t j = 0; j < length(current->children); j++) {
+	for (Size j = 0; j < length(current->children); j++) {
 	  Tree* child = current->children[j];
 	  assert(child != NULL);
 	  
@@ -284,10 +260,10 @@ int main(int argc, char** argv) {
 
       compute_bytes_encodings(tree, 0, 0);
 
-      for (size_t i = 0; i < bytes_read; i++) {
-	char   c      = buffer[i];
-	size_t length = encoding_lengths[c];
-	for (size_t j = 0; j < length; j++) {
+      for (Size i = 0; i < bytes_read; i++) {
+	unsigned c      = buffer[i] & 0xFF;
+	Size   length = encoding_lengths[c];
+	for (Size j = 0; j < length; j++) {
 	  write_bit(output_fd, encodings[c] >> (length - 1 - j));
 	}
       }
@@ -303,14 +279,14 @@ int main(int argc, char** argv) {
       write(output_fd, output, output_byte);
     }
   } else if (strcmp(command, "decompress") == 0) {
-    //    for (size_t block = 0; block < 5; block++) {
+    //    for (Size block = 0; block < 5; block++) {
     for (;;) {
       if (peek_byte(input_fd) == 0x1FF) {
 	break;
       }
       
       ntrees = 0;
-      for (size_t i = 0; i < 511; i++) {
+      for (Size i = 0; i < 511; i++) {
 	Tree* new = &trees[ntrees++];
 	if (peek_byte(input_fd) == 0x80) {
 	  read_byte(input_fd);
@@ -318,7 +294,7 @@ int main(int argc, char** argv) {
 	  read_byte(input_fd);
 	  read_byte(input_fd);
 	} else {
-	  for (size_t j = 0; j < length(new->children); j++) {
+	  for (Size j = 0; j < length(new->children); j++) {
 	    unsigned head   = read_byte(input_fd) << 8;
 	    unsigned tail   = read_byte(input_fd);
 	    unsigned offset = head | tail;
@@ -335,7 +311,7 @@ int main(int argc, char** argv) {
       assert(ntrees == 511);
       Tree* root = &trees[510];
 
-      for (size_t i = 0; i < length(buffer); i++) {
+      for (Size i = 0; i < length(buffer); i++) {
 	if (peek_byte(input_fd) == 0x1FF) {
 	  goto DONE;
 	}
