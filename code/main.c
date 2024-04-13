@@ -183,7 +183,12 @@ int main(int argc, Char** argv) {
       }
 
       memset(trees, 0, sizeof trees);
-      memset(queues, 0, sizeof queues);
+
+      for (Size i = 0; i < length(queues); i++) {
+	Queue* queue = &queues[i];
+	queue->start = 0;
+	queue->size  = 0;
+      }
 
       {
 	Queue* queue = &queues[0];
