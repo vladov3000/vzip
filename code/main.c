@@ -11,11 +11,11 @@
 #define max(x, y)     ((x) > (y) ? (x) : (y))
 
 typedef char           Char;
-typedef unsigned short UShort;
-typedef unsigned char  UChar;
-typedef int            Fd;
-typedef size_t         Size;
 typedef ssize_t        ISize;
+typedef unsigned char  UChar;
+typedef unsigned short UShort;
+typedef size_t         Size;
+typedef int            Fd;
 
 typedef UShort Tree;
 
@@ -53,10 +53,6 @@ static Size  encodings[256];
 static UChar encoding_lengths[256];
 
 static UChar buffer[8 * 4096];
-static Size  input_start;
-static ISize input_bytes;
-static UChar small_input;
-static Size  input_bit;
 
 static UChar output[8 * 4096];
 static Size  output_byte;
@@ -79,47 +75,6 @@ static void write_bit(int fd, unsigned bit) {
     small_output = 0;
     output_bit   = 0;
   }
-}
-
-static unsigned read_byte_or_eof(int fd) {
-  if (input_start == input_bytes) {
-    input_start = 0;
-    input_bytes = read(fd, buffer, sizeof buffer);
-    if (input_bytes == -1) {
-      perror("read");
-      exit(EXIT_FAILURE);
-    } else if (input_bytes == 0) {
-      return 0x1FF;
-    }
-  }
-  return buffer[input_start++];
-}
-
-static unsigned peek_byte(int fd) {
-  unsigned byte = read_byte_or_eof(fd);
-  if (byte != 0x1FF) {
-    input_start--;
-  }
-  return byte;
-}
-
-static unsigned read_byte(int fd) {
-  unsigned byte = read_byte_or_eof(fd);
-  if (byte == 0x1FF) {
-    puts("Unexpected EOF.\n");
-    exit(EXIT_FAILURE);
-  } else {
-    return byte;
-  }
-}
-
-static unsigned read_bit(int fd) {
-  if (input_bit == 0) {
-    small_input = read_byte(fd);
-  }
-  unsigned result = small_input & (1 << (7 - input_bit)) ? 1 : 0;
-  input_bit       = (input_bit + 1) & 7;
-  return result;
 }
 
 static void compute_bytes_encodings(UShort tree, Size encoding, UChar length) {
@@ -270,47 +225,86 @@ int main(int argc, Char** argv) {
       write(output_fd, output, output_byte);
     }
   } else if (strcmp(command, "decompress") == 0) {
-    for (;;) {
-      if (peek_byte(input_fd) == 0x1FF) {
-	break;
+    Size state         = 0;
+    Tree current       = 0;
+    Size child         = 0;
+    Size bytes_written = 0;
+    
+    while (1) {
+      ISize bytes_read = read(input_fd, buffer, sizeof buffer);
+      if (bytes_read == -1) {
+	perror("read");
+	exit(EXIT_FAILURE);
+      } else if (bytes_read == 0) {
+	if (state < 2) {
+	  puts("Unexpected eof while parsing tree.");
+	  exit(EXIT_FAILURE);
+	} else {
+	  break;
+	}
       }
-      
-      Tree current = 0;
-      for (Size i = 0; i < 255; i++) {
-	for (Size j = 0; j < 2; j++) {
-	  unsigned child = read_byte(input_fd);
-	  if (child == 0xFF) {
-	    child = 0x100 | read_byte(input_fd);
-	  }
-	  if (!(child & 0x100) && child >= length(children)) {
-	    printf("Invalid child offset 0x%x.\n", child);
-	    exit(EXIT_FAILURE);
+
+      for (Size i = 0; i < bytes_read; i++) {
+	UChar byte = buffer[i];
+	switch (state) {
+	case 0:
+	  if (byte == 0xFF) {
+	    state = 1;
 	  } else {
-	    children[current][j] = child;
+	    if (byte >= length(children)) {
+	      printf("Invalid child offset 0x%x.\n", byte);
+	      exit(EXIT_FAILURE);
+	    } else {
+	      children[current][child] = byte;
+	      child++;
+	      if (child == 2) {
+		child = 0;
+		current++;
+		if (current == 255) {
+		  state         = 2;
+		  current       = 254;
+		  bytes_written = 0;
+		}
+	      }
+	    }
 	  }
-	}
-	current++;
+	  break;
+
+	case 1:
+	  children[current][child] = 0x100 | byte;
+	  state = 0;
+	  child++;
+	  if (child == 2) {
+	    child = 0;
+	    current++;
+	    if (current == 255) {
+	      state         = 2;
+	      current       = 254;
+	      bytes_written = 0;
+	    }
+	  }
+	  break;
+
+	case 2:
+	  for (Size j = 0; j < 8; j++) {
+	    UChar bit = (byte >> (7 - j)) & 1;
+	    current   = children[current][bit];
+	    if (current & 0x100) {
+	      write_byte(output_fd, current & 0xFF);
+	      current = 254;
+	      bytes_written++;
+	      if (bytes_written == sizeof buffer) {
+		state   = 0;
+		current = 0;
+		child   = 0;
+		break;
+	      }
+	    }
+	  }
+	  break;
+	};
       }
-
-      assert(current == 255);
-
-      for (Size i = 0; i < length(buffer); i++) {
-	if (peek_byte(input_fd) == 0x1FF) {
-	  goto DONE;
-	}
-
-	UShort current = 254;
-	while (!(current & 0x100)) {
-	  unsigned bit = read_bit(input_fd);
-	  current      = children[current][bit];
-	}
-	write_byte(output_fd, current & 0xFF);
-      }
-
-      input_bit = 0;
     }
-
-  DONE:
     if (output_byte > 0) {
       write(output_fd, output, output_byte);
     }
