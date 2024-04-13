@@ -17,11 +17,7 @@ typedef int            Fd;
 typedef size_t         Size;
 typedef ssize_t        ISize;
 
-typedef struct Tree Tree;
-
-struct Tree {
-  UShort children[2];
-};
+typedef UShort Tree;
 
 typedef struct {
   UShort trees[256];
@@ -52,7 +48,7 @@ static UShort dequeue(Queue* queue) {
 
 static UChar buffer[8 * 4096];
 static Size  weights[512];
-static Tree  trees[512];
+static Tree  children[512][2];
 static Size  ntrees;
 static Queue queues[2];
 static Size  encodings[256];
@@ -133,10 +129,9 @@ static void compute_bytes_encodings(UShort tree, unsigned encoding, int length) 
     return;
   }
 
-  UShort* children = trees[tree].children;
   for (Size i = 0; i < 2; i++) {
     Size  new_encoding = (encoding << 1) | i;
-    compute_bytes_encodings(children[i], new_encoding, length + 1);
+    compute_bytes_encodings(children[tree][i], new_encoding, length + 1);
   }
 }
 
@@ -180,7 +175,7 @@ int main(int argc, Char** argv) {
       }
 
       memset(weights, 0, sizeof weights);
-      memset(trees, 0, sizeof trees);
+      memset(children, 0, sizeof children);
 
       for (Size i = 0; i < length(queues); i++) {
 	Queue* queue = &queues[i];
@@ -215,33 +210,34 @@ int main(int argc, Char** argv) {
       }
 
       while (queues[0].size + queues[1].size > 1) {
-	UShort children[2];
-	for (Size i = 0; i < length(children); i++) {
+	UShort new_children[2];
+	for (Size i = 0; i < 2; i++) {
 	  if (queues[0].size == 0) {
-	    children[i] = dequeue(&queues[1]);
+	    new_children[i] = dequeue(&queues[1]);
 	  } else if (queues[1].size == 0) {
-	    children[i] = dequeue(&queues[0]);
+	    new_children[i] = dequeue(&queues[0]);
 	  } else if (weights[front(&queues[0])] <= weights[front(&queues[1])]) {
-	    children[i] = dequeue(&queues[0]);
+	    new_children[i] = dequeue(&queues[0]);
 	  } else {
-	    children[i] = dequeue(&queues[1]);
+	    new_children[i] = dequeue(&queues[1]);
 	  }
 	}
 
-	assert(ntrees < length(trees));
+	assert(ntrees < length(children));
 
-	Tree* new = &trees[ntrees++];
-	for (Size i = 0; i < length(new->children); i++) {
-	  weights[new - trees] += weights[children[i]];
-	  new->children[i]      = children[i];
+	for (Size i = 0; i < 2; i++) {
+	  weights[ntrees]     += weights[new_children[i]];
+	  children[ntrees][i]  = new_children[i];
 	}
-	enqueue(&queues[1], new - trees);
+	enqueue(&queues[1], ntrees);
+	ntrees++;
       }
 
+      assert(ntrees == 255);
+
       for (Size i = 0; i < ntrees; i++) {
-	Tree* current = &trees[i];
-	for (Size j = 0; j < length(current->children); j++) {
-	  UShort child = current->children[j];
+	for (Size j = 0; j < 2; j++) {
+	  UShort child = children[i][j];
 	  write_byte(output_fd, child >> 8);
 	  write_byte(output_fd, child & 0xFF);
 	}
@@ -276,18 +272,18 @@ int main(int argc, Char** argv) {
       
       ntrees = 0;
       for (Size i = 0; i < 255; i++) {
-	Tree* new = &trees[ntrees++];
-	for (Size j = 0; j < length(new->children); j++) {
+	for (Size j = 0; j < 2; j++) {
 	  unsigned head  = read_byte(input_fd) << 8;
 	  unsigned tail  = read_byte(input_fd);
 	  unsigned child = head | tail;
-	  if (!(child & 0x100) && child >= length(trees)) {
+	  if (!(child & 0x100) && child >= length(children)) {
 	    printf("Invalid child offset 0x%x.\n", child);
 	    exit(EXIT_FAILURE);
 	  } else {
-	    new->children[j] = child;
+	    children[ntrees][j] = child;
 	  }
 	}
+	ntrees++;
       }
 
       assert(ntrees == 255);
@@ -300,7 +296,7 @@ int main(int argc, Char** argv) {
 	UShort current = 254;
 	while (!(current & 0x100)) {
 	  unsigned bit = read_bit(input_fd);
-	  current      = trees[current].children[bit];
+	  current      = children[current][bit];
 	}
 	write_byte(output_fd, current & 0xFF);
       }
