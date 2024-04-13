@@ -1,0 +1,28 @@
+vzip - Vlad's zip
+
+  vzip is a simple compression program that works by compressing 8 MiB chunks
+using huffman encoding. It compresses the 5458199 byte "examples/shakespeare.txt"
+file down to 3272382 bytes or ~60% of the original size. For reference,
+zip compresses the same file down to 2022556 bytes or 37% of the original
+size.
+
+=== USAGE ===
+
+  This code was written on a Macbook, but it should work on linux and
+ARM as well. To build the program, run "./build.sh release". The resulting
+executable will be "build/vzip".
+
+  To compress a file, run "vzip compress INPUT OUTPUT" where INPUT is the file
+you wish to compress and OUTPUT is where the compressed file will be output.
+
+  To decompress a file, run "vzip compress INPUT OUTPUT" where INPUT is a file
+compressed by vzip and OUTPUT is where you want the original file.
+
+=== Limitations ===
+
+  There is no hash to check the integrity of the result, however offsets of
+serialized huffman trees are verified to prevent undefined behavior.
+
+  The implementation is completely unoptimized. It is single-threaded and
+does not make use of useful x86_64 extensions like AVX-512 to speed up
+encoding/decoding.
