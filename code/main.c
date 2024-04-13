@@ -20,7 +20,6 @@ typedef ssize_t        ISize;
 typedef struct Tree Tree;
 
 struct Tree {
-  // If children[0] == 0, then this is a leaf node and children[1] is a character.
   UShort children[2];
 };
 
@@ -126,20 +125,18 @@ static unsigned read_bit(int fd) {
   return result;
 }
 
-static void compute_bytes_encodings(Tree* tree, unsigned encoding, int length) {
-  UShort* children = tree->children;
-  if (children[0] == 0) {
-    UChar c             = children[1];
+static void compute_bytes_encodings(UShort tree, unsigned encoding, int length) {
+  if (tree & 0x100) {
+    UChar c             = tree & 0xFF;
     encodings[c]        = encoding;
     encoding_lengths[c] = length;
     return;
   }
 
-  for (Size i = 0; i < length(tree->children); i++) {
-    assert(children[i] != 0);
-    Tree* child        = &trees[children[i]];
+  UShort* children = trees[tree].children;
+  for (Size i = 0; i < 2; i++) {
     Size  new_encoding = (encoding << 1) | i;
-    compute_bytes_encodings(child, new_encoding, length + 1);
+    compute_bytes_encodings(children[i], new_encoding, length + 1);
   }
 }
 
@@ -194,16 +191,14 @@ int main(int argc, Char** argv) {
       {
 	Queue* queue = &queues[0];
 	for (Size i = 0; i < length(queue->trees); i++) {
-	  trees[i].children[0] = 0;
-	  trees[i].children[1] = i;
-	  queue->trees[i]      = i;
+	  queue->trees[i] = 0x100 | i;
 	}
       
 	queue->size = length(queue->trees);
-	ntrees      = length(queue->trees);
+	ntrees      = 0;
       
 	for (Size i = 0; i < sizeof buffer; i++) {
-	  weights[queue->trees[buffer[i]]]++;
+	  weights[0x100 | buffer[i]]++;
 	}
 
 	for (Size i = 1; i < length(queue->trees); i++) {
@@ -243,32 +238,21 @@ int main(int argc, Char** argv) {
 	enqueue(&queues[1], new - trees);
       }
 
-      Tree* tree = &trees[front(queues[0].size > 0 ? &queues[0] : &queues[1])];
       for (Size i = 0; i < ntrees; i++) {
 	Tree* current = &trees[i];
-	if (current->children[0] == 0) {
-	  write_byte(output_fd, 0x80);
-	  write_byte(output_fd, current->children[1]);
-	  write_byte(output_fd, 0);
-	  write_byte(output_fd, 0);
-	  continue;
-	}
-
 	for (Size j = 0; j < length(current->children); j++) {
-	  Tree* child = &trees[current->children[j]];
-	  assert(child != NULL);
-	  
-	  short delta = (short) (child - trees);
-	  write_byte(output_fd, delta >> 8);
-	  write_byte(output_fd, delta & 0xFF);
+	  UShort child = current->children[j];
+	  write_byte(output_fd, child >> 8);
+	  write_byte(output_fd, child & 0xFF);
 	}
       }
 
-      compute_bytes_encodings(tree, 0, 0);
+      UShort root = front(queues[0].size > 0 ? &queues[0] : &queues[1]);
+      compute_bytes_encodings(root, 0, 0);
 
       for (Size i = 0; i < bytes_read; i++) {
-	unsigned c      = buffer[i] & 0xFF;
-	Size   length = encoding_lengths[c];
+	UChar c      = buffer[i];
+	Size  length = encoding_lengths[c];
 	for (Size j = 0; j < length; j++) {
 	  write_bit(output_fd, encodings[c] >> (length - 1 - j));
 	}
@@ -291,43 +275,34 @@ int main(int argc, Char** argv) {
       }
       
       ntrees = 0;
-      for (Size i = 0; i < 511; i++) {
+      for (Size i = 0; i < 255; i++) {
 	Tree* new = &trees[ntrees++];
-	if (peek_byte(input_fd) == 0x80) {
-	  read_byte(input_fd);
-	  new->children[0] = 0;
-	  new->children[1] = read_byte(input_fd);
-	  read_byte(input_fd);
-	  read_byte(input_fd);
-	} else {
-	  for (Size j = 0; j < length(new->children); j++) {
-	    unsigned head   = read_byte(input_fd) << 8;
-	    unsigned tail   = read_byte(input_fd);
-	    unsigned offset = head | tail;
-	    if (offset >= length(trees)) {
-	      printf("Invalid child offset.\n");
-	      exit(EXIT_FAILURE);
-	    } else {
-	      new->children[j] = offset;
-	    }
+	for (Size j = 0; j < length(new->children); j++) {
+	  unsigned head  = read_byte(input_fd) << 8;
+	  unsigned tail  = read_byte(input_fd);
+	  unsigned child = head | tail;
+	  if (!(child & 0x100) && child >= length(trees)) {
+	    printf("Invalid child offset 0x%x.\n", child);
+	    exit(EXIT_FAILURE);
+	  } else {
+	    new->children[j] = child;
 	  }
 	}
       }
 
-      assert(ntrees == 511);
-      Tree* root = &trees[510];
+      assert(ntrees == 255);
 
       for (Size i = 0; i < length(buffer); i++) {
 	if (peek_byte(input_fd) == 0x1FF) {
 	  goto DONE;
 	}
-	
-	Tree* current = root;
-	while (current->children[0] != 0) {
+
+	UShort current = 254;
+	while (!(current & 0x100)) {
 	  unsigned bit = read_bit(input_fd);
-	  current      = &trees[current->children[bit]];
+	  current      = trees[current].children[bit];
 	}
-	write_byte(output_fd, current->children[1]);
+	write_byte(output_fd, current & 0xFF);
       }
 
       input_bit = 0;
