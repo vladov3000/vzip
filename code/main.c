@@ -46,20 +46,22 @@ static UShort dequeue(Queue* queue) {
   return result;
 }
 
-static UChar buffer[8 * 4096];
 static Size  weights[512];
 static Tree  children[255][2];
 static Queue queues[2];
 static Size  encodings[256];
-static Size  encoding_lengths[256];
-static UChar output[8 * 4096];
-static Size  output_byte;
-static UChar small_output;
-static Size  output_bit;
+static UChar encoding_lengths[256];
+
+static UChar buffer[8 * 4096];
 static Size  input_start;
 static ISize input_bytes;
 static UChar small_input;
 static Size  input_bit;
+
+static UChar output[8 * 4096];
+static Size  output_byte;
+static UChar small_output;
+static Size  output_bit;
 
 static void write_byte(int fd, unsigned byte) {
   output[output_byte++] = byte;
@@ -120,7 +122,7 @@ static unsigned read_bit(int fd) {
   return result;
 }
 
-static void compute_bytes_encodings(UShort tree, unsigned encoding, int length) {
+static void compute_bytes_encodings(UShort tree, Size encoding, UChar length) {
   if (tree & 0x100) {
     UChar c             = tree & 0xFF;
     encodings[c]        = encoding;
@@ -129,7 +131,7 @@ static void compute_bytes_encodings(UShort tree, unsigned encoding, int length) 
   }
 
   for (Size i = 0; i < 2; i++) {
-    Size  new_encoding = (encoding << 1) | i;
+    Size new_encoding = (encoding << 1) | i;
     compute_bytes_encodings(children[tree][i], new_encoding, length + 1);
   }
 }
