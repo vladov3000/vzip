@@ -127,20 +127,19 @@ static unsigned read_bit(int fd) {
 }
 
 static void compute_bytes_encodings(Tree* tree, unsigned encoding, int length) {
-  if (tree == NULL) {
-    return;
-  }
-
   UShort* children = tree->children;
-  if (children[0] == 0 && children[1] == 0) {
-    int c               = tree->c & 0xFF;
+  if (children[0] == 0) {
+    UChar c             = tree->c;
     encodings[c]        = encoding;
     encoding_lengths[c] = length;
     return;
   }
 
   for (Size i = 0; i < length(tree->children); i++) {
-    compute_bytes_encodings(&trees[children[i]], (encoding << 1) | i, length + 1);
+    assert(children[i] != 0);
+    Tree* child        = &trees[children[i]];
+    Size  new_encoding = (encoding << 1) | i;
+    compute_bytes_encodings(child, new_encoding, length + 1);
   }
 }
 
