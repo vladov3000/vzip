@@ -10,18 +10,19 @@
 #define min(x, y)     ((x) < (y) ? (x) : (y))
 #define max(x, y)     ((x) > (y) ? (x) : (y))
 
-typedef char          Char;
-typedef unsigned char UChar;
-typedef int           Fd;
-typedef size_t        Size;
-typedef ssize_t       ISize;
+typedef char           Char;
+typedef unsigned short UShort;
+typedef unsigned char  UChar;
+typedef int            Fd;
+typedef size_t         Size;
+typedef ssize_t        ISize;
 
 typedef struct Tree Tree;
 
 struct Tree {
-  UChar c;
-  Size  weight;
-  Tree* children[2];
+  UChar  c;
+  Size   weight;
+  UShort children[2];
 };
 
 typedef struct {
@@ -130,8 +131,8 @@ static void compute_bytes_encodings(Tree* tree, unsigned encoding, int length) {
     return;
   }
 
-  Tree** children = tree->children;
-  if (children[0] == NULL && children[1] == NULL) {
+  UShort* children = tree->children;
+  if (children[0] == 0 && children[1] == 0) {
     int c               = tree->c & 0xFF;
     encodings[c]        = encoding;
     encoding_lengths[c] = length;
@@ -139,7 +140,7 @@ static void compute_bytes_encodings(Tree* tree, unsigned encoding, int length) {
   }
 
   for (Size i = 0; i < length(tree->children); i++) {
-    compute_bytes_encodings(children[i], (encoding << 1) | i, length + 1);
+    compute_bytes_encodings(&trees[children[i]], (encoding << 1) | i, length + 1);
   }
 }
 
@@ -237,7 +238,7 @@ int main(int argc, Char** argv) {
 	Tree* new = &trees[ntrees++];
 	for (Size i = 0; i < length(new->children); i++) {
 	  new->weight      += children[i]->weight;
-	  new->children[i]  = children[i];
+	  new->children[i]  = children[i] - trees;
 	}
 	enqueue(&queues[1], new);
       }
@@ -245,7 +246,7 @@ int main(int argc, Char** argv) {
       Tree* tree = front(queues[0].size > 0 ? &queues[0] : &queues[1]);
       for (Size i = 0; i < ntrees; i++) {
 	Tree* current = &trees[i];
-	if (current->children[0] == NULL && current->children[1] == NULL) {
+	if (current->children[0] == 0 && current->children[1] == 0) {
 	  write_byte(output_fd, 0x80);
 	  write_byte(output_fd, current->c);
 	  write_byte(output_fd, 0);
@@ -254,7 +255,7 @@ int main(int argc, Char** argv) {
 	}
 
 	for (Size j = 0; j < length(current->children); j++) {
-	  Tree* child = current->children[j];
+	  Tree* child = &trees[current->children[j]];
 	  assert(child != NULL);
 	  
 	  short delta = (short) (child - trees);
@@ -284,7 +285,6 @@ int main(int argc, Char** argv) {
       write(output_fd, output, output_byte);
     }
   } else if (strcmp(command, "decompress") == 0) {
-    //    for (Size block = 0; block < 5; block++) {
     for (;;) {
       if (peek_byte(input_fd) == 0x1FF) {
 	break;
@@ -307,7 +307,7 @@ int main(int argc, Char** argv) {
 	      printf("Invalid child offset.\n");
 	      exit(EXIT_FAILURE);
 	    } else {
-	      new->children[j] = trees + offset;
+	      new->children[j] = offset;
 	    }
 	  }
 	}
@@ -322,9 +322,9 @@ int main(int argc, Char** argv) {
 	}
 	
 	Tree* current = root;
-	while (current->children[0] != NULL) {
+	while (current->children[0] != 0) {
 	  unsigned bit = read_bit(input_fd);
-	  current      = current->children[bit];
+	  current      = &trees[current->children[bit]];
 	}
 	write_byte(output_fd, current->c);
       }
