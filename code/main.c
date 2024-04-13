@@ -20,7 +20,7 @@ typedef ssize_t        ISize;
 typedef struct Tree Tree;
 
 struct Tree {
-  UChar  c;
+  // If children[0] == 0, then this is a leaf node and children[1] is a character.
   UShort children[2];
 };
 
@@ -129,7 +129,7 @@ static unsigned read_bit(int fd) {
 static void compute_bytes_encodings(Tree* tree, unsigned encoding, int length) {
   UShort* children = tree->children;
   if (children[0] == 0) {
-    UChar c             = tree->c;
+    UChar c             = children[1];
     encodings[c]        = encoding;
     encoding_lengths[c] = length;
     return;
@@ -194,8 +194,9 @@ int main(int argc, Char** argv) {
       {
 	Queue* queue = &queues[0];
 	for (Size i = 0; i < length(queue->trees); i++) {
-	  trees[i].c      = i;
-	  queue->trees[i] = i;
+	  trees[i].children[0] = 0;
+	  trees[i].children[1] = i;
+	  queue->trees[i]      = i;
 	}
       
 	queue->size = length(queue->trees);
@@ -245,9 +246,9 @@ int main(int argc, Char** argv) {
       Tree* tree = &trees[front(queues[0].size > 0 ? &queues[0] : &queues[1])];
       for (Size i = 0; i < ntrees; i++) {
 	Tree* current = &trees[i];
-	if (current->children[0] == 0 && current->children[1] == 0) {
+	if (current->children[0] == 0) {
 	  write_byte(output_fd, 0x80);
-	  write_byte(output_fd, current->c);
+	  write_byte(output_fd, current->children[1]);
 	  write_byte(output_fd, 0);
 	  write_byte(output_fd, 0);
 	  continue;
@@ -294,7 +295,8 @@ int main(int argc, Char** argv) {
 	Tree* new = &trees[ntrees++];
 	if (peek_byte(input_fd) == 0x80) {
 	  read_byte(input_fd);
-	  new->c = read_byte(input_fd);
+	  new->children[0] = 0;
+	  new->children[1] = read_byte(input_fd);
 	  read_byte(input_fd);
 	  read_byte(input_fd);
 	} else {
@@ -325,7 +327,7 @@ int main(int argc, Char** argv) {
 	  unsigned bit = read_bit(input_fd);
 	  current      = &trees[current->children[bit]];
 	}
-	write_byte(output_fd, current->c);
+	write_byte(output_fd, current->children[1]);
       }
 
       input_bit = 0;
