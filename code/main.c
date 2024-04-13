@@ -49,7 +49,6 @@ static UShort dequeue(Queue* queue) {
 static UChar buffer[8 * 4096];
 static Size  weights[512];
 static Tree  children[512][2];
-static Size  ntrees;
 static Queue queues[2];
 static Size  encodings[256];
 static Size  encoding_lengths[256];
@@ -190,7 +189,6 @@ int main(int argc, Char** argv) {
 	}
       
 	queue->size = length(queue->trees);
-	ntrees      = 0;
       
 	for (Size i = 0; i < sizeof buffer; i++) {
 	  weights[0x100 | buffer[i]]++;
@@ -209,6 +207,7 @@ int main(int argc, Char** argv) {
 	}
       }
 
+      Tree current = 0;
       while (queues[0].size + queues[1].size > 1) {
 	UShort new_children[2];
 	for (Size i = 0; i < 2; i++) {
@@ -223,19 +222,19 @@ int main(int argc, Char** argv) {
 	  }
 	}
 
-	assert(ntrees < length(children));
+	assert(current < length(children));
 
 	for (Size i = 0; i < 2; i++) {
-	  weights[ntrees]     += weights[new_children[i]];
-	  children[ntrees][i]  = new_children[i];
+	  weights[current]     += weights[new_children[i]];
+	  children[current][i]  = new_children[i];
 	}
-	enqueue(&queues[1], ntrees);
-	ntrees++;
+	enqueue(&queues[1], current);
+	current++;
       }
 
-      assert(ntrees == 255);
+      assert(current == 255);
 
-      for (Size i = 0; i < ntrees; i++) {
+      for (Size i = 0; i < current; i++) {
 	for (Size j = 0; j < 2; j++) {
 	  UShort child = children[i][j];
 	  write_byte(output_fd, child >> 8);
@@ -270,7 +269,7 @@ int main(int argc, Char** argv) {
 	break;
       }
       
-      ntrees = 0;
+      Tree current = 0;
       for (Size i = 0; i < 255; i++) {
 	for (Size j = 0; j < 2; j++) {
 	  unsigned head  = read_byte(input_fd) << 8;
@@ -280,13 +279,13 @@ int main(int argc, Char** argv) {
 	    printf("Invalid child offset 0x%x.\n", child);
 	    exit(EXIT_FAILURE);
 	  } else {
-	    children[ntrees][j] = child;
+	    children[current][j] = child;
 	  }
 	}
-	ntrees++;
+	current++;
       }
 
-      assert(ntrees == 255);
+      assert(current == 255);
 
       for (Size i = 0; i < length(buffer); i++) {
 	if (peek_byte(input_fd) == 0x1FF) {
